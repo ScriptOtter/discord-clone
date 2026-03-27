@@ -1,8 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client"
   output   = "./generated"
@@ -11,16 +9,144 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
-
 model Account {
-  id String @id @unique @default(uuid())
-
-  username String @unique
-  password String
-  avatar String @default("")
-  email String? @unique
-  phone String? @unique
-
+  id        String   @id @default(uuid())
+  username  String   @unique
+  password  String
+  avatar    String   @default("")
+  email     String?  @unique
+  phone     String?  @unique
+  
+  // Отношения
+  sentMessages     Message[]      @relation("SentMessages")
+  receivedMessages Message[]      @relation("ReceivedMessages")
+  chatParticipants ChatParticipant[]  // Участие в чатах
+  channelMembers   ChannelMember[]    // Участие в каналах
+  
   createdAt DateTime @default(now())
-  updatedAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([username])
+  @@index([email])
+}
+
+model Channel {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  description String?
+  avatar    String   @default("")
+  
+  // Отношения
+  chats     Chat[]           // Чаты в этом канале
+  members   ChannelMember[]  // Участники канала
+  createdBy String           // ID создателя
+  isPrivate Boolean   @default(false)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([name])
+}
+
+// Участники канала
+model ChannelMember {
+  id        String   @id @default(uuid())
+  channel   Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  channelId String
+  user      Account  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  role      MemberRole @default(MEMBER)
+  joinedAt  DateTime @default(now())
+  
+  @@unique([channelId, userId])
+  @@index([userId])
+  @@index([channelId])
+}
+
+// Чат (комната для общения)
+model Chat {
+  id        String   @id @default(uuid())
+  name      String?  // null для личных чатов
+  type      ChatType @default(GROUP)
+  
+  // Отношения
+  channel   Channel? @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  channelId String?
+  messages  Message[]
+  participants ChatParticipant[]
+  createdBy String
+  isActive  Boolean  @default(true)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([type])
+  @@index([channelId])
+}
+
+// Участники чата
+model ChatParticipant {
+  id        String   @id @default(uuid())
+  chat      Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  chatId    String
+  user      Account  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  lastReadAt DateTime @default(now())
+  joinedAt  DateTime @default(now())
+  isMuted   Boolean  @default(false)
+  
+  @@unique([chatId, userId])
+  @@index([userId])
+  @@index([chatId])
+}
+
+model Message {
+  id        String      @id @default(uuid())
+  content   String      @db.Text
+  
+  // Отправитель
+  sender    Account     @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  senderId  String
+  
+  // Получатель (для личных сообщений)
+  recipient Account?    @relation("ReceivedMessages", fields: [recipientId], references: [id], onDelete: Cascade)
+  recipientId String?
+  
+  // Чат (для групповых сообщений)
+  chat      Chat?       @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  chatId    String?
+  
+  type      MessageType @default(PERSONAL)
+  
+  // Дополнительные поля
+  replyTo   String?     // ID сообщения, на которое отвечают
+  isEdited  Boolean     @default(false)
+  isDeleted Boolean     @default(false)
+  metadata  Json?       // Дополнительные данные (вложения и т.д.)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([senderId])
+  @@index([recipientId])
+  @@index([chatId])
+  @@index([createdAt])
+  @@index([type])
+}
+
+enum MessageType {
+  PERSONAL  // Личное сообщение 1-на-1
+  CHAT      // Сообщение в групповом чате
+  SYSTEM    // Системное сообщение
+}
+
+enum ChatType {
+  DIRECT  // Личный чат (2 участника)
+  GROUP   // Групповой чат (3+ участников)
+}
+
+enum MemberRole {
+  OWNER
+  ADMIN
+  MEMBER
 }
